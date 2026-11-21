@@ -1,0 +1,99 @@
+name: Build APK Harta Karun
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Siapkan project Android
+        run: |
+          flutter create --org com.khairul --project-name harta_karun --platforms android .
+          rm -rf test
+
+          # MainActivity: multicast lock supaya HP bisa saling menemukan lewat hotspot
+          F=$(find android/app/src/main -name MainActivity.kt | head -1)
+          PKG=$(head -1 "$F")
+          cat > "$F" <<EOF
+          $PKG
+
+          import android.content.Context
+          import android.net.wifi.WifiManager
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+
+          class MainActivity : FlutterActivity() {
+              private var lock: WifiManager.MulticastLock? = null
+
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "harta/wifi").setMethodCallHandler { call, result ->
+                      when (call.method) {
+                          "acquire" -> {
+                              try {
+                                  val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                                  if (lock == null) {
+                                      lock = wm.createMulticastLock("harta")
+                                      lock?.setReferenceCounted(false)
+                                  }
+                                  lock?.acquire()
+                                  result.success(true)
+                              } catch (e: Exception) {
+                                  result.success(false)
+                              }
+                          }
+                          "release" -> {
+                              try { lock?.release() } catch (e: Exception) {}
+                              result.success(true)
+                          }
+                          else -> result.notImplemented()
+                      }
+                  }
+              }
+          }
+          EOF
+          cat "$F"
+
+          # Izin jaringan, TTS, dan nama aplikasi
+          python3 - <<'PY'
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p).read()
+          perms = ('<uses-permission android:name="android.permission.INTERNET"/>\n'
+                   '    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n'
+                   '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n'
+                   '    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>\n'
+                   '    <uses-permission android:name="android.permission.VIBRATE"/>\n    ')
+          s = s.replace('<application', perms + '<application', 1)
+          s = s.replace('android:label="harta_karun"', 'android:label="Harta Karun"')
+          tts = '<intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>'
+          if '<queries>' in s:
+              s = s.replace('<queries>', '<queries>\n        ' + tts, 1)
+          else:
+              s = s.replace('</manifest>', '<queries>' + tts + '</queries>\n</manifest>')
+          open(p, 'w').write(s)
+          print(s)
+          PY
+
+      - run: flutter pub get
+
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harta-karun-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
