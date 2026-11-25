@@ -124,7 +124,7 @@ jobs:
           cp harta.jks android/app/harta.jks
 
           python3 - <<'PY'
-          import os
+          import os, re
           # Manifest: izin + provider + nama aplikasi + TTS
           p = 'android/app/src/main/AndroidManifest.xml'
           s = open(p).read()
@@ -166,6 +166,9 @@ jobs:
 
               buildTypes {''', 1)
               g = g.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("hk")')
+              g = re.sub(r'compileSdk\s*=\s*[^\n]+', 'compileSdk = 36', g)
+              g = re.sub(r'ndkVersion\s*=\s*[^\n]+', 'ndkVersion = "27.0.12077973"', g)
+              g = re.sub(r'minSdk\s*=\s*[^\n]+', 'minSdk = 24', g)
               g += '\ndependencies {\n    implementation("androidx.core:core:1.13.1")\n}\n'
               open(kts, 'w').write(g)
               print(g)
@@ -182,6 +185,9 @@ jobs:
 
               buildTypes {''', 1)
               g = g.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.hk')
+              g = re.sub(r'compileSdk(Version)?\s+[^\n]+', 'compileSdk 36', g)
+              g = re.sub(r'ndkVersion\s+[^\n]+', 'ndkVersion "27.0.12077973"', g)
+              g = re.sub(r'minSdk(Version)?\s+[^\n]+', 'minSdkVersion 24', g)
               g += '\ndependencies {\n    implementation "androidx.core:core:1.13.1"\n}\n'
               open(groovy, 'w').write(g)
               print(g)
