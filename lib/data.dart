@@ -428,7 +428,16 @@ const List<String> countWords = ['Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam',
 const double gateX = 600, boulderX = 1000;
 const Offset landX = Offset(1400, 445);
 const Offset landBeach = Offset(210, 470);
-double pathY(double x) => 470 + sin(x / 240) * 80;
+/// Misi yang sedang dimainkan (dipakai untuk bentuk jalan pulau).
+int landMission = 0;
+
+/// Jalan setapak di pulau besar: bentuknya berbeda tiap negara.
+double pathY(double x) {
+  final m = landMission;
+  final freq = 200.0 + (m % 4) * 35;
+  final amp = 55.0 + (m % 3) * 30;
+  return 470 + sin(x / freq + m * 1.3) * amp;
+}
 const Offset villagerPos = Offset(1180, 560);
 
 bool isTool(String c) => c == 'kunci' || c == 'cangkul' || c == 'linggis';

@@ -1210,11 +1210,94 @@ class GamePainter extends CustomPainter {
       }
     }
 
-    // jalan setapak
+    // ===== pemandangan khas tiap negara =====
+    final m = gs.mission;
+    final desert = k.grass == null;
+    final snowy = k.sand == const Color(0xFFF5FBFF);
+    final lm = m.isEven ? const Offset(1330, 190) : const Offset(1350, 712);
+    final sc = Random(m * 71 + 9);
+    final used = <Offset>[];
+    bool free(Offset p, double r) {
+      if ((p.dy - pathY(p.dx)).abs() < 70 + r * 0.5) return false;
+      if (gs.hasGate && (p.dx - gateX).abs() < 60 + r * 0.6) return false;
+      if (gs.hasBoulder && (p.dx - boulderX).abs() < 70 + r * 0.6) return false;
+      if ((p - landX).distance < 160 + r) return false;
+      if ((p - lm).distance < 120 + r) return false;
+      if ((p - villagerPos).distance < 110 + r) return false;
+      if (gs.bushes.any((bb) => (Offset(bb.x, bb.y) - p).distance < 80 + r)) return false;
+      if (used.any((q) => (q - p).distance < 60 + r)) return false;
+      return true;
+    }
+
+    Offset? spot(double r) {
+      for (int a = 0; a < 250; a++) {
+        final p = Offset(330 + sc.nextDouble() * 1190, 150 + sc.nextDouble() * 620);
+        if (free(p, r)) {
+          used.add(p);
+          return p;
+        }
+      }
+      return null;
+    }
+
+    // kolam / oasis / danau beku
+    final pond = spot(110);
+    if (pond != null) {
+      final w = 170 + sc.nextDouble() * 80, h = 90 + sc.nextDouble() * 30;
+      c.drawOval(Rect.fromCenter(center: pond, width: w + 22, height: h + 18),
+          Paint()..color = snowy ? Colors.white : Color.lerp(k.sand, Colors.brown, 0.15)!);
+      c.drawOval(Rect.fromCenter(center: pond, width: w, height: h),
+          Paint()..color = snowy ? const Color(0xFFB3E5FC) : const Color(0xFF4FC3F7));
+      c.drawOval(Rect.fromCenter(center: pond.translate(-w * 0.18, -h * 0.18), width: w * 0.3, height: h * 0.16),
+          Paint()..color = const Color(0x66FFFFFF));
+      final swim = Offset(pond.dx + sin(t * 0.6 + m) * w * 0.25, pond.dy + cos(t * 0.5) * h * 0.12);
+      drawEmoji(c, snowy ? '🐧' : (desert ? '🐫' : (m % 3 == 0 ? '🦆' : (m % 3 == 1 ? '🐸' : '🦢'))), swim, 42);
+      if (desert) {
+        drawEmoji(c, '🌴', pond.translate(-w / 2 - 6, -30), 70);
+        drawEmoji(c, '🌴', pond.translate(w / 2 + 4, -24), 64);
+      }
+    }
+
+    // desa kecil di dekat warga
+    final house = desert ? '⛺' : (m % 2 == 0 ? '🏠' : '🏡');
+    for (final off in const [Offset(150, -40), Offset(-20, 120), Offset(170, 110)]) {
+      final hp = villagerPos + off;
+      if ((hp.dy - pathY(hp.dx)).abs() < 70 || (hp - landX).distance < 140) continue;
+      used.add(hp);
+      c.drawOval(Rect.fromCenter(center: hp.translate(0, 32), width: 80, height: 16), Paint()..color = const Color(0x33000000));
+      drawEmoji(c, house, hp, 76);
+    }
+
+    // petak bunga / bukit pasir / gundukan salju
+    for (int i = 0; i < 3 + m % 3; i++) {
+      final fp = spot(55);
+      if (fp == null) continue;
+      if (desert) {
+        final dune = Paint()
+          ..color = Color.lerp(k.sand, Colors.deepOrange, 0.25)!
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5
+          ..strokeCap = StrokeCap.round;
+        c.drawArc(Rect.fromCenter(center: fp, width: 110, height: 40), pi, pi, false, dune);
+        c.drawArc(Rect.fromCenter(center: fp.translate(40, 18), width: 80, height: 30), pi, pi, false, dune);
+      } else if (snowy) {
+        c.drawOval(Rect.fromCenter(center: fp, width: 110, height: 44), Paint()..color = Colors.white);
+        c.drawOval(Rect.fromCenter(center: fp.translate(-14, -8), width: 50, height: 16), Paint()..color = const Color(0x55B3E5FC));
+      } else {
+        const flowers = ['🌼', '🌷', '🌻', '🌸', '🌺'];
+        for (int f = 0; f < 6; f++) {
+          final ang = f * 1.05 + i;
+          drawEmoji(c, flowers[(m + f) % flowers.length], fp.translate(cos(ang) * 34, sin(ang) * 18), 26);
+        }
+      }
+    }
+
+    // jalan setapak (bentuknya beda tiap negara)
     final path = Path()..moveTo(250, pathY(250));
-    for (double x = 270; x <= landX.dx; x += 20) {
+    for (double x = 270; x <= landX.dx - 40; x += 20) {
       path.lineTo(x, pathY(x));
     }
+    path.lineTo(landX.dx, landX.dy);
     c.drawPath(
         path,
         Paint()
@@ -1226,7 +1309,7 @@ class GamePainter extends CustomPainter {
     c.drawPath(
         path,
         Paint()
-          ..color = Color.lerp(ground, const Color(0xFFD7B98E), 0.6)!
+          ..color = Color.lerp(ground, snowy ? Colors.white : const Color(0xFFD7B98E), 0.6)!
           ..style = PaintingStyle.stroke
           ..strokeWidth = 58
           ..strokeCap = StrokeCap.round
@@ -1234,9 +1317,9 @@ class GamePainter extends CustomPainter {
 
     // ikon negara + bendera
     if (k.landmark == 'PIRAMIDA') {
-      drawPyramids(c, const Offset(1330, 220));
+      drawPyramids(c, lm.translate(0, 30));
     } else {
-      drawEmoji(c, k.landmark, const Offset(1330, 190), 150);
+      drawEmoji(c, k.landmark, lm, 150);
     }
     final pole = landX.translate(90, -50);
     c.drawLine(pole, pole.translate(0, -90),
@@ -1245,30 +1328,43 @@ class GamePainter extends CustomPainter {
           ..strokeWidth = 5);
     drawEmoji(c, k.flag, pole.translate(24, -74), 44, angle: sin(t * 3) * 0.08);
 
-    // pepohonan hutan
-    final trees = gs.mission == countries.length - 1
-        ? const ['🌲', '⛄', '🌲']
-        : (k.grass == null ? const ['🌵', '🌴', '🌵'] : const ['🌳', '🌲', '🌴']);
-    final tr = Random(gs.mission * 11 + 5);
+    // pepohonan & hiasan khas negara
+    final base = snowy
+        ? const ['🌲', '🌲', '⛄']
+        : (desert ? const ['🌵', '🌴', '🌵'] : (m % 3 == 0 ? const ['🌳', '🌴', '🌳'] : const ['🌳', '🌲', '🌴']));
+    final trees = <String>[...base, if (k.deco.isNotEmpty) k.deco[0], if (k.deco.length > 2) k.deco[2]];
     final treePos = <Offset>[];
-    for (int a = 0; a < 400 && treePos.length < 30; a++) {
-      final p = Offset(300 + tr.nextDouble() * 1260, 110 + tr.nextDouble() * 680);
-      if ((p.dy - pathY(p.dx)).abs() < 85) continue;
-      if (gs.hasGate && (p.dx - gateX).abs() < 55) continue;
-      if (gs.hasBoulder && (p.dx - boulderX).abs() < 60) continue;
-      if ((p - landX).distance < 170) continue;
-      if ((p - const Offset(1330, 200)).distance < 120) continue;
-      if (gs.bushes.any((b) => (Offset(b.x, b.y) - p).distance < 95)) continue;
+    final nTree = 16 + (m % 4) * 5;
+    for (int a = 0; a < 500 && treePos.length < nTree; a++) {
+      final p = Offset(300 + sc.nextDouble() * 1260, 110 + sc.nextDouble() * 680);
+      if (!free(p, 25)) continue;
       if (treePos.any((q) => (q - p).distance < 85)) continue;
       treePos.add(p);
     }
-    treePos.sort((a, b) => a.dy.compareTo(b.dy));
-    for (int i = 0; i < treePos.length; i++) {
-      final p = treePos[i];
-      c.drawOval(Rect.fromCenter(center: p.translate(0, 40), width: 70, height: 16), Paint()..color = const Color(0x33000000));
-      drawEmoji(c, trees[i % trees.length], p, 84.0 + (i % 3) * 12, angle: sin(t * 1.2 + i) * 0.03);
+    // hewan khas berkeliaran
+    final animal = k.deco.length > 1 ? k.deco[1] : '🐾';
+    final animals = <Offset>[];
+    for (int i = 0; i < 2; i++) {
+      final ap = spot(30);
+      if (ap != null) animals.add(ap);
     }
-    if (k.deco.length > 1) drawEmoji(c, k.deco[1], const Offset(1210, 715), 64);
+    final all = <MapEntry<Offset, String>>[
+      for (int i = 0; i < treePos.length; i++) MapEntry(treePos[i], trees[(i * 7 + m) % trees.length]),
+      for (int i = 0; i < animals.length; i++)
+        MapEntry(animals[i].translate(sin(t * 0.7 + i * 2) * 30, 0), '@$animal'),
+    ]..sort((a, b) => a.key.dy.compareTo(b.key.dy));
+    for (int i = 0; i < all.length; i++) {
+      final p = all[i].key;
+      final isAnimal = all[i].value.startsWith('@');
+      final e = isAnimal ? all[i].value.substring(1) : all[i].value;
+      c.drawOval(Rect.fromCenter(center: p.translate(0, isAnimal ? 26 : 40), width: isAnimal ? 50 : 70, height: 14),
+          Paint()..color = const Color(0x33000000));
+      if (isAnimal) {
+        drawEmoji(c, e, p.translate(0, -(sin(t * 6 + i).abs()) * 6), 58);
+      } else {
+        drawEmoji(c, e, p, 80.0 + (i % 3) * 14, angle: sin(t * 1.2 + i) * 0.03);
+      }
+    }
 
     // gerbang kayu
     if (gs.hasGate) {

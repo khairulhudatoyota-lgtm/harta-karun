@@ -1071,6 +1071,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   double bigA = 0;
   double _wrongT = 0;
   bool _sportOpen = false, _sportBlocked = false;
+  String _lastHint = '';
+  double _hintT = 0;
   List<Offset> mobSm = [];
   Offset? target;
   double targetAge = 9;
@@ -1278,6 +1280,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     }
     bigA += da * k;
     if (_wrongT > 0) _wrongT -= dt;
+    // petunjuk muncul sebentar setiap kali berganti
+    final hnow = _hint();
+    if (hnow != _lastHint) {
+      _lastHint = hnow;
+      _hintT = 5;
+    }
+    if (_hintT > 0) _hintT -= dt;
 
     // buka mini game olahraga saat mendekati warga
     final mw = wm[s.myId];
@@ -1356,7 +1365,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       case 'map':
         return 'Ayo berlayar ke ${c.name}!';
       case 'sail':
-        if (gs.bigMode && !speak) return 'Kemudikan kapal bersama: ${_myRolesText()}';
+        if (gs.bigMode && !speak) return 'Kumpulkan ${itemCountFor(gs.mission)} ${c.item} bersama!';
         return speak ? countryIntro(gs.mission) : 'Kumpulkan ${itemCountFor(gs.mission)} ${c.itemName} ${c.item}';
       case 'island':
         return speak ? 'Berlayar ke dermaga pulau!' : 'Berlayar ke dermaga pulau ⚓';
@@ -1719,24 +1728,31 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 bottom: 10,
                 child: SafeArea(
                   child: GestureDetector(
-                    onTap: () => Voice.say(_hint(speak: true)),
+                    onTap: () {
+                      Voice.say(_hint(speak: true));
+                      setState(() => _hintT = 5);
+                    },
                     child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                       Transform.translate(
                         offset: Offset(0, sin(t * 3) * 4),
-                        child: const Text('🦜', style: TextStyle(fontSize: 54)),
+                        child: const Text('🦜', style: TextStyle(fontSize: 44)),
                       ),
-                      Container(
-                        constraints: BoxConstraints(maxWidth: _size.width * 0.42),
-                        margin: const EdgeInsets.only(bottom: 26, left: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      if (_hintT > 0)
+                      Opacity(
+                        opacity: _hintT.clamp(0.0, 1.0),
+                        child: Container(
+                        constraints: BoxConstraints(maxWidth: _size.width * 0.3),
+                        margin: const EdgeInsets.only(bottom: 20, left: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(color: const Color(0xFF8D6E3F), width: 3),
                           boxShadow: const [BoxShadow(color: Color(0x55000000), blurRadius: 6, offset: Offset(0, 3))],
                         ),
-                        child: Text('${_hint()}  🔊',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF3E2410))),
+                        child: Text(_lastHint,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF3E2410))),
+                      ),
                       ),
                     ]),
                   ),

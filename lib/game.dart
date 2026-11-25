@@ -154,6 +154,7 @@ class GameState {
   // ---------------- misi ----------------
   void startMission(int m) {
     mission = m.clamp(0, countries.length - 1);
+    landMission = mission;
     phase = 'map';
     phaseT = 0;
     dig = 0;
@@ -936,6 +937,7 @@ class GameState {
 
   List<Map<String, dynamic>> applyJson(Map<String, dynamic> j) {
     mission = (j['m'] as num).toInt();
+    landMission = mission;
     phase = j['p'] as String;
     phaseT = _n(j['pt']);
     dig = (j['dg'] as num).toInt();
