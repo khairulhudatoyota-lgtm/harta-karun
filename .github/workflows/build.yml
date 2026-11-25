@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,17 +28,23 @@ jobs:
           flutter create --org com.khairul --project-name harta_karun --platforms android .
           rm -rf test
 
-          # MainActivity: multicast lock supaya HP bisa saling menemukan lewat hotspot
+          # ---- MainActivity: hotspot (multicast) + instal update ----
           F=$(find android/app/src/main -name MainActivity.kt | head -1)
           PKG=$(head -1 "$F")
-          cat > "$F" <<EOF
-          $PKG
+          echo "$PKG" > "$F"
+          cat >> "$F" <<'EOF'
 
           import android.content.Context
+          import android.content.Intent
+          import android.net.Uri
           import android.net.wifi.WifiManager
+          import android.os.Build
+          import android.provider.Settings
+          import androidx.core.content.FileProvider
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
           import io.flutter.plugin.common.MethodChannel
+          import java.io.File
 
           class MainActivity : FlutterActivity() {
               private var lock: WifiManager.MulticastLock? = null
@@ -64,22 +73,75 @@ jobs:
                           else -> result.notImplemented()
                       }
                   }
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "harta/update").setMethodCallHandler { call, result ->
+                      if (call.method == "install") {
+                          try {
+                              val path = call.argument<String>("path") ?: ""
+                              if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                                  val i = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + packageName))
+                                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                  startActivity(i)
+                                  result.success("perm")
+                              } else {
+                                  val uri = FileProvider.getUriForFile(this, packageName + ".fileprovider", File(path))
+                                  val i = Intent(Intent.ACTION_VIEW)
+                                  i.setDataAndType(uri, "application/vnd.android.package-archive")
+                                  i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                  startActivity(i)
+                                  result.success("ok")
+                              }
+                          } catch (e: Exception) {
+                              result.success("Gagal: " + e.message)
+                          }
+                      } else {
+                          result.notImplemented()
+                      }
+                  }
               }
           }
           EOF
           cat "$F"
 
-          # Izin jaringan, TTS, dan nama aplikasi
+          # ---- file_paths untuk FileProvider ----
+          mkdir -p android/app/src/main/res/xml
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<paths>\n    <cache-path name="cache" path="." />\n    <files-path name="files" path="." />\n</paths>\n' > android/app/src/main/res/xml/file_paths.xml
+
+          # ---- ikon aplikasi (icon.png di folder utama repo) ----
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
           python3 - <<'PY'
+          import os
+          from PIL import Image
+          if os.path.exists('icon.png'):
+              src = Image.open('icon.png').convert('RGBA')
+              for d, sz in {'mdpi': 48, 'hdpi': 72, 'xhdpi': 96, 'xxhdpi': 144, 'xxxhdpi': 192}.items():
+                  folder = f'android/app/src/main/res/mipmap-{d}'
+                  os.makedirs(folder, exist_ok=True)
+                  src.resize((sz, sz), Image.LANCZOS).save(f'{folder}/ic_launcher.png')
+              print('ikon terpasang')
+          PY
+
+          # ---- kunci tanda tangan tetap (supaya bisa update tanpa hapus aplikasi) ----
+          cp harta.jks android/app/harta.jks
+
+          python3 - <<'PY'
+          import os
+          # Manifest: izin + provider + nama aplikasi + TTS
           p = 'android/app/src/main/AndroidManifest.xml'
           s = open(p).read()
           perms = ('<uses-permission android:name="android.permission.INTERNET"/>\n'
                    '    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n'
                    '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n'
                    '    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>\n'
+                   '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n'
                    '    <uses-permission android:name="android.permission.VIBRATE"/>\n    ')
           s = s.replace('<application', perms + '<application', 1)
           s = s.replace('android:label="harta_karun"', 'android:label="Harta Karun"')
+          provider = ('<provider android:name="androidx.core.content.FileProvider" '
+                      'android:authorities="${applicationId}.fileprovider" android:exported="false" '
+                      'android:grantUriPermissions="true">'
+                      '<meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/>'
+                      '</provider>\n    ')
+          s = s.replace('</application>', provider + '</application>', 1)
           tts = '<intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>'
           if '<queries>' in s:
               s = s.replace('<queries>', '<queries>\n        ' + tts, 1)
@@ -87,13 +149,59 @@ jobs:
               s = s.replace('</manifest>', '<queries>' + tts + '</queries>\n</manifest>')
           open(p, 'w').write(s)
           print(s)
+
+          # Gradle: tanda tangan tetap + androidx.core
+          kts = 'android/app/build.gradle.kts'
+          groovy = 'android/app/build.gradle'
+          if os.path.exists(kts):
+              g = open(kts).read()
+              g = g.replace('    buildTypes {', '''    signingConfigs {
+                  create("hk") {
+                      storeFile = file("harta.jks")
+                      storePassword = "hartakarun"
+                      keyAlias = "hk"
+                      keyPassword = "hartakarun"
+                  }
+              }
+
+              buildTypes {''', 1)
+              g = g.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("hk")')
+              g += '\ndependencies {\n    implementation("androidx.core:core:1.13.1")\n}\n'
+              open(kts, 'w').write(g)
+              print(g)
+          else:
+              g = open(groovy).read()
+              g = g.replace('    buildTypes {', '''    signingConfigs {
+                  hk {
+                      storeFile file("harta.jks")
+                      storePassword "hartakarun"
+                      keyAlias "hk"
+                      keyPassword "hartakarun"
+                  }
+              }
+
+              buildTypes {''', 1)
+              g = g.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.hk')
+              g += '\ndependencies {\n    implementation "androidx.core:core:1.13.1"\n}\n'
+              open(groovy, 'w').write(g)
+              print(g)
           PY
 
       - run: flutter pub get
 
-      - run: flutter build apk --release
+      - run: flutter build apk --release --dart-define=BUILD=${{ github.run_number }} --build-number=${{ github.run_number }} --build-name=1.${{ github.run_number }}.0
+
+      - run: cp build/app/outputs/flutter-apk/app-release.apk harta-karun.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: harta-karun-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: harta-karun.apk
+
+      - name: Rilis untuk update otomatis
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Versi ${{ github.run_number }}
+          files: harta-karun.apk
+          make_latest: true
