@@ -1182,11 +1182,11 @@ class GamePainter extends CustomPainter {
 
     // tanah + tekstur
     final tex = Random(gs.mission * 3 + 1);
-    final spot = Paint()..color = Color.lerp(ground, Colors.white, 0.12)!;
+    final spotP = Paint()..color = Color.lerp(ground, Colors.white, 0.12)!;
     final spot2 = Paint()..color = Color.lerp(ground, Colors.black, 0.07)!;
     for (int i = 0; i < 46; i++) {
       c.drawCircle(Offset(150 + tex.nextDouble() * 1500, tex.nextDouble() * 800), 18 + tex.nextDouble() * 40,
-          i.isEven ? spot : spot2);
+          i.isEven ? spotP : spot2);
     }
     // pantai & laut di kiri
     final sandP = Paint()..color = k.sand;
