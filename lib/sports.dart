@@ -49,6 +49,7 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
   String msg = '';
   double msgT = 0;
   double actT = 0;
+  double hintT = 6; // petunjuk 🦜 tampil penuh beberapa detik lalu mengecil
 
   // timing
   double zoneC = 0.5;
@@ -101,6 +102,7 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
     _last = el;
     t += dt;
     if (msgT > 0) msgT -= dt;
+    if (hintT > 0) hintT -= dt;
     if (actT > 0) actT -= dt;
     if (won) {
       wonT += dt;
@@ -269,8 +271,10 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
         Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [k.sea1, Colors.white]).createShader(sky));
     final floor = Rect.fromLTWH(0, h * 0.55, w, h * 0.45);
     c.drawRect(floor, Paint()..color = _laneColor);
-    drawEmoji(c, k.landmark == 'PIRAMIDA' ? '🏜️' : k.landmark, Offset(w * 0.5, h * 0.3), h * 0.28);
-    drawEmoji(c, k.flag, Offset(w * 0.08, h * 0.12), h * 0.1);
+    // ikon khas negara = hiasan latar, dibuat pudar supaya tidak bertabrakan dengan tulisan
+    c.saveLayer(null, Paint()..color = const Color(0x66000000));
+    drawEmoji(c, k.landmark == 'PIRAMIDA' ? '🏜️' : k.landmark, Offset(w * 0.5, h * 0.4), h * 0.2);
+    c.restore();
     final s = h / 330; // skala tokoh
 
     switch (sp.type) {
@@ -292,14 +296,14 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
     for (int i = 0; i < need; i++) {
       drawEmoji(c, i < score ? '⭐' : '☆', Offset(w - 40.0 - (need - 1 - i) * 42, 34), 34);
     }
-    if (msgT > 0 && msg.isNotEmpty) {
-      drawLabel(c, msg, Offset(w / 2, h * 0.16), 30 * (0.8 + 0.2 * msgT.clamp(0.0, 1.0)), const Color(0xFFFFEB3B));
+    if (msgT > 0 && msg.isNotEmpty && !lost && !won) {
+      _banner(c, msg, Offset(w / 2, h * 0.26), 26 * (0.85 + 0.15 * msgT.clamp(0.0, 1.0)), const Color(0xFFFFEB3B));
     }
     if ((sp.type == 'race' || sp.type == 'tug') && countdown > 0 && !won) {
       final n = countdown.ceil();
       drawLabel(c, n > 3 ? '' : (countdown > 0.2 ? '$n' : 'MULAI!'), Offset(w / 2, h * 0.42), 80, Colors.white);
     }
-    if (lost) drawLabel(c, 'Hampir! Coba lagi 💪', Offset(w / 2, h * 0.42), 36, Colors.white);
+    if (lost) _banner(c, 'Hampir! Coba lagi 💪', Offset(w / 2, h * 0.26), 30, Colors.white);
     if (won) {
       c.drawRect(Offset.zero & size, Paint()..color = withA(Colors.black, min(0.45, wonT)));
       drawLabel(c, '🏆 MENANG!', Offset(w / 2, h * 0.32), 54, const Color(0xFFFFD54F));
@@ -311,6 +315,17 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
             Paint()..color = shipColors[i % 4]);
       }
     }
+  }
+
+  /// Tulisan di atas pita gelap transparan, supaya tetap terbaca di latar apa pun.
+  void _banner(Canvas c, String text, Offset center, double size, Color color) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: TextStyle(fontSize: size, color: color, fontWeight: FontWeight.w900)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final r = Rect.fromCenter(center: center, width: tp.width + 36, height: tp.height + 12);
+    c.drawRRect(RRect.fromRectAndRadius(r, Radius.circular(r.height / 2)), Paint()..color = const Color(0x993E2410));
+    tp.paint(c, center - Offset(tp.width / 2, tp.height / 2));
   }
 
   void _paintTiming(Canvas c, Size size, double s) {
@@ -334,7 +349,7 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
     drawNameTag(c, widget.playerName, heroP.translate(0, 26 * s), shipColors[0]);
     drawNameTag(c, 'Warga', foeP.translate(0, 26 * s), const Color(0xFF5D4037));
     // bar waktu
-    final bar = Rect.fromLTWH(w * 0.12, h * 0.9, w * 0.76, 26);
+    final bar = Rect.fromLTWH(w * 0.06, h * 0.9, w * 0.94 - 175, 26); // sisakan tempat untuk tombol kanan
     c.drawRRect(RRect.fromRectAndRadius(bar.inflate(4), const Radius.circular(16)), Paint()..color = const Color(0xCC3E2410));
     c.drawRRect(RRect.fromRectAndRadius(bar, const Radius.circular(13)), Paint()..color = const Color(0xFFFFCDD2));
     final z = Rect.fromLTWH(bar.left + bar.width * (zoneC - zoneW / 2), bar.top, bar.width * zoneW, bar.height);
@@ -529,28 +544,36 @@ class _SportGameState extends State<SportGame> with SingleTickerProviderStateMix
             Positioned(
               top: 8,
               left: 8,
+              right: 160, // jangan menimpa bintang skor di kanan atas
               child: Row(children: [
                 GestureDetector(onTap: widget.onClose, child: const Chip2(child: Text('✖'))),
                 const SizedBox(width: 8),
                 Chip2(child: Text('${sp.emoji} ${sp.name} • ${k.flag} ${k.name}')),
-              ]),
-            ),
-            Positioned(
-              left: 10,
-              bottom: 10,
-              child: GestureDetector(
-                onTap: () => Voice.say(sp.how),
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 300),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF8D6E3F), width: 3)),
-                  child: Text('🦜 ${sp.how} 🔊',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF3E2410))),
+                const SizedBox(width: 8),
+                // petunjuk 🦜: penuh di awal, lalu mengecil jadi tombol suara
+                Flexible(
+                  child: GestureDetector(
+                    onTap: () {
+                      Voice.say(sp.how);
+                      setState(() => hintT = 5);
+                    },
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 250),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF8D6E3F), width: 2)),
+                        child: Text(hintT > 0 ? '🦜 ${sp.how} 🔊' : '🦜🔊',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF3E2410))),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ]),
             ),
             if (!won)
               Positioned(
