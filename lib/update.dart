@@ -50,7 +50,11 @@ class Updater {
       final res = await req.close();
       if (res.statusCode != 200) return 'Gagal download (kode ${res.statusCode})';
       final total = res.contentLength;
-      final file = File('${Directory.systemTemp.path}/harta-karun-${info.build}.apk');
+      // Simpan di folder "cache" app (bukan code_cache dari Directory.systemTemp),
+      // karena FileProvider hanya mengizinkan <cache-path> & <files-path>.
+      final cacheDir = Directory('${Directory.systemTemp.parent.path}/cache');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+      final file = File('${cacheDir.path}/harta-karun-${info.build}.apk');
       final sink = file.openWrite();
       int got = 0;
       await for (final chunk in res) {
